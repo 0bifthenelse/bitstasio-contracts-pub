@@ -14,11 +14,11 @@ contract BitstasioTokenFarm {
     using SafeMath for uint256;
 
     struct Referral {
-        mapping(address => bool) referredMap; // sender referred which wallets?
-        address referredBy; // sender was referred by?
-        address[] referred; // list of wallets referred by sender?
-        uint256 bitsReceived; // total number of bits sender received from referrals?
-        uint256 referralUses; // number of referral uses for sender?
+        mapping(address => bool) referredMap; 
+        address referredBy; 
+        address[] referred; 
+        uint256 bitsReceived; 
+        uint256 referralUses;
     }
 
     uint256 public BIT_TO_CONVERT_1SHARE = 2592000;
@@ -44,14 +44,14 @@ contract BitstasioTokenFarm {
     constructor(address _token, uint256 _launchBlock) {
         erctoken = _token;
         admin = msg.sender;
-        feePerc = 5; // maximum possible - can be reduced or set back to 5
+        feePerc = 5; 
         feeReceiver = msg.sender;
         token_farm = IToken(erctoken);
         launchBlock = _launchBlock;
         setWhitelist(msg.sender);
     }
 
-    event BuyBits(address from, uint256 amount);
+    event BuyBits(address from, uint256 amount, uint256 bitBought);
     event CompoundBits(address from, uint256 bitUsed, uint256 sharesReceived, address ref);
     event SellBits(address from, uint256 amount);
     event SendShares(address from, address to, uint256 amount);
@@ -219,7 +219,7 @@ contract BitstasioTokenFarm {
         require(token_farm.transfer(feeReceiver, fee), "Transfer failed.");
         compoundBits(ref);
 
-        emit BuyBits(msg.sender, bitBought);
+        emit BuyBits(msg.sender, amount, bitBought);
     }
 
     function calculateTrade(
