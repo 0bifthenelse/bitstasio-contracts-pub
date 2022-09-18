@@ -1,29 +1,33 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Bitstasio Token Farm revision 3
+ * Bitstasio Token Farm revision 4
  * Application: https://app.bitstasio.com
  * - 6% automatic share burn on selling, incentivizes investment strategies & punishes TVL draining
  * - share burning also burns bits, decreasing supply - deflationary behavior
  * - 48 hours rewards cutoff
  * - referrals features have been removed
+ * - lowered daily return
  */
 
 pragma solidity ^0.8.0; // solhint-disable-line
 
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
-import "../IToken.sol";
+import "../interfaces/IToken.sol";
+import "../interfaces/IUniswapRouter.sol";
 
 contract BitstasioTokenFarm {
     using SafeMath for uint256;
 
-    uint256 public BIT_TO_CONVERT_1SHARE = 2592000;
     uint256 PSN = 10000;
     uint256 PSNH = 5000;
     bool public initialized = false;
+
     address public admin;
-    address public feeReceiver;
+    address public marketing;
+    address public influencer;
+    address public dispatcher;
 
     mapping(address => uint256) public shares;
     mapping(address => uint256) public ownedBits;
@@ -36,17 +40,40 @@ contract BitstasioTokenFarm {
     address private erctoken;
 
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
+
     uint16 internal constant PERCENT_DIVIDER = 1e4;
     uint16 internal constant SHARES_TO_BURN = 600;
 
-    uint16 public constant FEE_DEPOSIT = 500; // 5%
-    uint16 public constant FEE_WITHDRAW = 1000; // 10%
+    // TOTAL DEPOSIT FEES: 5%
+    uint256 public constant FEE_DEPOSIT_ADMIN = 150; // 1.50%
+    uint256 public constant FEE_DEPOSIT_DISPATCHER = 100; // 1.00%
+    uint256 public constant FEE_DEPOSIT_MARKETING = 150; // 1.50%
+    uint256 public constant FEE_DEPOSIT_INFLUENCER = 100; // 1.00%
 
-    constructor(address _token) {
+    // TOTAL WITHDRAW FEES: 10%
+    uint256 public constant FEE_WITHDRAW_ADMIN = 250; // 2.50%
+    uint256 public constant FEE_WITHDRAW_DISPATCHER = 150; // 1.50%
+    uint256 public constant FEE_WITHDRAW_MARKETING = 400; // 4.00%
+    uint256 public constant FEE_WITHDRAW_INFLUENCER = 200; // 2.00%
+
+    uint256 public constant BIT_TO_CONVERT_1SHARE = 7776000;
+    uint256 public constant DAILY_INTEREST = 1000; // 1.000% daily ROI
+
+    IUniswapV2Router public constant router =
+        IUniswapV2Router(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+
+    constructor(
+        address _token,
+        address _influencer,
+        address _marketing,
+        address _dispatcher
+    ) {
         erctoken = _token;
-        admin = msg.sender;
-        feeReceiver = msg.sender;
         token_farm = IToken(erctoken);
+        admin = msg.sender;
+        influencer = _influencer;
+        marketing = _marketing;
+        dispatcher = _dispatcher;
     }
 
     event BuyBits(address indexed from, uint256 amount, uint256 bitBought);
@@ -57,11 +84,6 @@ contract BitstasioTokenFarm {
     );
     event SellBits(address indexed from, uint256 amount);
     event BurnShares(address indexed from, uint256 sharesBurned);
-
-    modifier onlyFeeReceiver() {
-        require(msg.sender == feeReceiver, "Only feeReceiver restricted.");
-        _;
-    }
 
     modifier onlyAdmin() {
         require(msg.sender == admin, "Only admin restricted.");
@@ -75,7 +97,7 @@ contract BitstasioTokenFarm {
         );
 
         uint256 balance = shares[msg.sender];
-        uint256 bits_to_burn = balance.mul(BIT_TO_CONVERT_1SHARE);
+        uint256 bits_to_burn = balance.mul(_getBitToShare());
 
         if (marketBit - bits_to_burn > 0) {
             marketBit = marketBit.sub(bits_to_burn);
@@ -95,12 +117,215 @@ contract BitstasioTokenFarm {
         return size > 0;
     }
 
-    function setAdmin(address _newAdmin) public onlyAdmin {
-        admin = _newAdmin;
+    function _getPercentage(uint256 value, uint256 percent)
+        private
+        pure
+        returns (uint256)
+    {
+        return (value * percent) / PERCENT_DIVIDER;
     }
 
-    function setFeeReceiver(address _newFeeReceiver) public onlyFeeReceiver {
-        feeReceiver = _newFeeReceiver;
+    function _getCoinAfterSwap(uint256 value) private returns (uint256) {
+        uint256 deadline = block.timestamp + 1 minutes;
+        address[] memory path = new address[](2);
+        path[0] = erctoken;
+        path[1] = router.WETH();
+
+        require(token_farm.approve(address(router), value), "Approve failed.");
+
+        uint256 balance_before = address(this).balance;
+
+        router.swapExactTokensForETH(value, 0, path, address(this), deadline);
+
+        return address(this).balance.sub(balance_before);
+    }
+
+    function _getFeeDeposit(uint256 value) private returns (uint256) {
+        uint256 feeAdmin_token = _getPercentage(value, FEE_DEPOSIT_ADMIN);
+        uint256 feeMarketing_token = _getPercentage(
+            value,
+            FEE_DEPOSIT_MARKETING
+        );
+        uint256 feeDispatcher_token = _getPercentage(
+            value,
+            FEE_DEPOSIT_DISPATCHER
+        );
+        uint256 feeInfluencer_token = _getPercentage(
+            value,
+            FEE_DEPOSIT_INFLUENCER
+        );
+
+        uint256 total_to_swap = feeAdmin_token +
+            feeMarketing_token +
+            feeDispatcher_token +
+            feeInfluencer_token;
+        uint256 swapped_coins = _getCoinAfterSwap(total_to_swap);
+
+        uint256 feeAdmin = _getPercentage(swapped_coins, FEE_DEPOSIT_ADMIN);
+        uint256 feeMarketing = _getPercentage(
+            swapped_coins,
+            FEE_DEPOSIT_MARKETING
+        );
+        uint256 feeDispatcher = _getPercentage(
+            swapped_coins,
+            FEE_DEPOSIT_DISPATCHER
+        );
+        uint256 feeInfluencer = _getPercentage(
+            swapped_coins,
+            FEE_DEPOSIT_INFLUENCER
+        );
+
+        payable(admin).transfer(feeAdmin);
+        payable(dispatcher).transfer(feeDispatcher);
+        payable(influencer).transfer(feeInfluencer);
+        payable(marketing).transfer(feeMarketing);
+
+        return value - feeAdmin - feeMarketing - feeInfluencer - feeDispatcher;
+    }
+
+    function _getFeeDepositSimple(uint256 value)
+        private
+        pure
+        returns (uint256)
+    {
+        uint256 feeAdmin = _getPercentage(value, FEE_DEPOSIT_ADMIN);
+        uint256 feeMarketing = _getPercentage(value, FEE_DEPOSIT_MARKETING);
+        uint256 feeDispatcher = _getPercentage(value, FEE_DEPOSIT_DISPATCHER);
+        uint256 feeInfluencer = _getPercentage(value, FEE_DEPOSIT_INFLUENCER);
+
+        return value - feeAdmin - feeMarketing - feeInfluencer - feeDispatcher;
+    }
+
+    function _getFeeWithdraw(uint256 value) private returns (uint256) {
+        uint256 feeAdmin_token = _getPercentage(value, FEE_WITHDRAW_ADMIN);
+        uint256 feeMarketing_token = _getPercentage(
+            value,
+            FEE_WITHDRAW_MARKETING
+        );
+        uint256 feeDispatcher_token = _getPercentage(
+            value,
+            FEE_WITHDRAW_DISPATCHER
+        );
+        uint256 feeInfluencer_token = _getPercentage(
+            value,
+            FEE_WITHDRAW_INFLUENCER
+        );
+
+        uint256 total_to_swap = feeAdmin_token +
+            feeMarketing_token +
+            feeDispatcher_token +
+            feeInfluencer_token;
+        uint256 swapped_coins = _getCoinAfterSwap(total_to_swap);
+
+        uint256 feeAdmin = _getPercentage(swapped_coins, FEE_WITHDRAW_ADMIN);
+        uint256 feeMarketing = _getPercentage(
+            swapped_coins,
+            FEE_WITHDRAW_MARKETING
+        );
+        uint256 feeDispatcher = _getPercentage(
+            swapped_coins,
+            FEE_WITHDRAW_DISPATCHER
+        );
+        uint256 feeInfluencer = _getPercentage(
+            swapped_coins,
+            FEE_WITHDRAW_INFLUENCER
+        );
+
+        payable(admin).transfer(feeAdmin);
+        payable(dispatcher).transfer(feeDispatcher);
+        payable(influencer).transfer(feeInfluencer);
+        payable(marketing).transfer(feeMarketing);
+
+        return value - feeAdmin - feeMarketing - feeInfluencer - feeDispatcher;
+    }
+
+    function _getFeeWithdrawSimple(uint256 value)
+        private
+        pure
+        returns (uint256)
+    {
+        uint256 feeAdmin = _getPercentage(value, FEE_WITHDRAW_ADMIN);
+        uint256 feeMarketing = _getPercentage(value, FEE_WITHDRAW_MARKETING);
+        uint256 feeDispatcher = _getPercentage(value, FEE_WITHDRAW_DISPATCHER);
+        uint256 feeInfluencer = _getPercentage(value, FEE_WITHDRAW_INFLUENCER);
+
+        return value - feeAdmin - feeMarketing - feeInfluencer - feeDispatcher;
+    }
+
+    function _getBitToShare() private pure returns (uint256) {
+        return 7776e6 / DAILY_INTEREST;
+    }
+
+    function _getBitSinceLastConvert(address adr)
+        private
+        view
+        returns (uint256)
+    {
+        uint256 secondsPassed = min(
+            2 days,
+            SafeMath.sub(block.timestamp, lastConvert[adr])
+        );
+
+        return SafeMath.mul(secondsPassed, shares[adr]);
+    }
+
+    function getBitToShare() external pure returns (uint256) {
+        return _getBitToShare();
+    }
+
+    function seedMarket(uint256 amount) public onlyAdmin {
+        require(!initialized, "Already initialized.");
+        require(marketBit == 0);
+        require(
+            token_farm.transferFrom(msg.sender, address(this), amount),
+            "Transaction failed."
+        );
+        initialized = true;
+        marketBit = 108000000000;
+    }
+
+    function getBalance() public view returns (uint256) {
+        return token_farm.balanceOf(address(this));
+    }
+
+    function getShares() public view returns (uint256) {
+        return shares[msg.sender];
+    }
+
+    function getBits() public view returns (uint256) {
+        return
+            SafeMath.add(
+                ownedBits[msg.sender],
+                _getBitSinceLastConvert(msg.sender)
+            );
+    }
+
+    function getLastConvert() public view returns (uint256) {
+        return lastConvert[msg.sender];
+    }
+
+    function getBitSinceLastConvert(address adr)
+        external
+        view
+        returns (uint256)
+    {
+        return _getBitSinceLastConvert(adr);
+    }
+
+    function setAdmin(address _admin) external onlyAdmin {
+        admin = _admin;
+    }
+
+    function setDispatcher(address _dispatcher) external onlyAdmin {
+        dispatcher = _dispatcher;
+    }
+
+    function setInfluencer(address _influencer) external onlyAdmin {
+        influencer = _influencer;
+    }
+
+    function setMarketing(address _marketing) external onlyAdmin {
+        marketing = _marketing;
     }
 
     function compoundBits() public {
@@ -108,7 +333,7 @@ contract BitstasioTokenFarm {
 
         uint256 bitUsed = getBits();
 
-        uint256 newShares = bitUsed.div(BIT_TO_CONVERT_1SHARE);
+        uint256 newShares = bitUsed.div(_getBitToShare());
         shares[msg.sender] = shares[msg.sender].add(newShares);
         ownedBits[msg.sender] = 0;
         lastConvert[msg.sender] = block.timestamp;
@@ -127,7 +352,7 @@ contract BitstasioTokenFarm {
 
         uint256 hasBit = getBits();
         uint256 bitValue = calculateBitSell(hasBit);
-        uint256 fee = getFeeWithdraw(bitValue);
+        uint256 fee = _getFeeWithdrawSimple(bitValue);
         uint256 sharesToBurn = (sharesOwned.mul(SHARES_TO_BURN)).div(
             PERCENT_DIVIDER
         );
@@ -141,7 +366,8 @@ contract BitstasioTokenFarm {
             burnShares(sharesToBurn); // burn 6% shares
         }
 
-        token_farm.transfer(feeReceiver, fee);
+        fee = _getFeeWithdraw(bitValue);
+
         token_farm.transfer(msg.sender, bitValue.sub(fee));
 
         emit SellBits(msg.sender, bitValue);
@@ -156,13 +382,13 @@ contract BitstasioTokenFarm {
         );
 
         uint256 bitBought = calculateBitBuy(amount, getBalance().sub(amount));
-        bitBought = bitBought.sub(getFeeDeposit(bitBought));
-        uint256 fee = getFeeDeposit(amount);
-        ownedBits[msg.sender] = ownedBits[msg.sender].add(bitBought);
-        deposited[msg.sender] += bitBought;
+        bitBought = bitBought.sub(_getFeeDepositSimple(bitBought));
+        ownedBits[msg.sender] += bitBought;
+        deposited[msg.sender] += _getFeeDepositSimple(amount);
 
-        require(token_farm.transfer(feeReceiver, fee), "Transfer failed.");
         compoundBits();
+
+        _getFeeDeposit(amount);
 
         emit BuyBits(msg.sender, amount, bitBought);
     }
@@ -204,75 +430,9 @@ contract BitstasioTokenFarm {
         return calculateBitBuy(eth, getBalance());
     }
 
-    function calculateShareBuySimple(uint256 amount)
-        public
-        view
-        returns (uint256)
-    {
-        uint256 sharesBought = calculateBitBuySimple(amount).div(
-            BIT_TO_CONVERT_1SHARE
-        );
-
-        return sharesBought.sub(getFeeDeposit(sharesBought));
-    }
-
-    function getFeeDeposit(uint256 amount) public pure returns (uint256) {
-        return (amount.mul(FEE_DEPOSIT)).div(PERCENT_DIVIDER);
-    }
-
-    function getFeeWithdraw(uint256 amount) public pure returns (uint256) {
-        return (amount.mul(FEE_WITHDRAW)).div(PERCENT_DIVIDER);
-    }
-
-    function seedMarket(uint256 amount) public onlyAdmin {
-        require(
-            token_farm.transferFrom(address(msg.sender), address(this), amount),
-            "Failed to seed market."
-        );
-        require(!initialized, "Already initialized.");
-        require(marketBit == 0);
-        initialized = true;
-        marketBit = 108000000000;
-    }
-
-    function getBalance() public view returns (uint256) {
-        return token_farm.balanceOf(address(this));
-    }
-
-    function getBalanceToken() public view returns (uint256) {
-        return token_farm.balanceOf(msg.sender);
-    }
-
-    function getAllowance() public view returns (uint256) {
-        return token_farm.allowance(msg.sender, address(this));
-    }
-
-    function getShares() public view returns (uint256) {
-        return shares[msg.sender];
-    }
-
-    function getBits() public view returns (uint256) {
-        return
-            SafeMath.add(
-                ownedBits[msg.sender],
-                getBitSinceLastConvert(msg.sender)
-            );
-    }
-
-    function getLastConvert() public view returns (uint256) {
-        return lastConvert[msg.sender];
-    }
-
-    function getBitSinceLastConvert(address adr) public view returns (uint256) {
-        uint256 secondsPassed = min(
-            2 days,
-            SafeMath.sub(block.timestamp, lastConvert[adr])
-        );
-
-        return SafeMath.mul(secondsPassed, shares[adr]);
-    }
-
     function min(uint256 a, uint256 b) private pure returns (uint256) {
         return a < b ? a : b;
     }
+
+    receive() external payable {}
 }
