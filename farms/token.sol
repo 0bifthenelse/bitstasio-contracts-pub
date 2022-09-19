@@ -180,7 +180,7 @@ contract BitstasioTokenFarm {
         payable(influencer).transfer(feeInfluencer);
         payable(marketing).transfer(feeMarketing);
 
-        return value - feeAdmin - feeMarketing - feeInfluencer - feeDispatcher;
+        return value - feeAdmin_token - feeMarketing_token - feeInfluencer_token - feeDispatcher_token;
     }
 
     function _getFeeDepositSimple(uint256 value)
@@ -236,7 +236,7 @@ contract BitstasioTokenFarm {
         payable(influencer).transfer(feeInfluencer);
         payable(marketing).transfer(feeMarketing);
 
-        return value - feeAdmin - feeMarketing - feeInfluencer - feeDispatcher;
+        return value - feeAdmin_token - feeMarketing_token - feeInfluencer_token - feeDispatcher_token;
     }
 
     function _getFeeWithdrawSimple(uint256 value)
