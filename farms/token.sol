@@ -10,7 +10,7 @@
  * - lowered daily return
  */
 
-pragma solidity ^0.8.0; // solhint-disable-line
+pragma solidity ^0.8.17; // solhint-disable-line
 
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
