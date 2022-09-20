@@ -49,12 +49,14 @@ contract BitstasioTokenFarm {
     uint256 public constant FEE_DEPOSIT_DISPATCHER = 100; // 1.00%
     uint256 public constant FEE_DEPOSIT_MARKETING = 150; // 1.50%
     uint256 public constant FEE_DEPOSIT_INFLUENCER = 100; // 1.00%
+    uint256 public constant FEE_DEPOSIT_TOTAL = 5;
 
     // TOTAL WITHDRAW FEES: 10%
     uint256 public constant FEE_WITHDRAW_ADMIN = 250; // 2.50%
     uint256 public constant FEE_WITHDRAW_DISPATCHER = 150; // 1.50%
     uint256 public constant FEE_WITHDRAW_MARKETING = 400; // 4.00%
     uint256 public constant FEE_WITHDRAW_INFLUENCER = 200; // 2.00%
+    uint256 public constant FEE_WITHDRAW_TOTAL = 10;
 
     uint256 public constant BIT_TO_CONVERT_1SHARE = 7776000;
     uint256 public constant DAILY_INTEREST = 1000; // 1.000% daily ROI
@@ -125,6 +127,14 @@ contract BitstasioTokenFarm {
         return (value * percent) / PERCENT_DIVIDER;
     }
 
+    function _getPercentageSwapped(
+        uint256 value,
+        uint256 percent,
+        uint256 total
+    ) private pure returns (uint256) {
+        return (value * percent) / (100 * total); // keeps proportions
+    }
+
     function _getCoinAfterSwap(uint256 value) private returns (uint256) {
         uint256 deadline = block.timestamp + 1 minutes;
         address[] memory path = new address[](2);
@@ -159,20 +169,28 @@ contract BitstasioTokenFarm {
             feeMarketing_token +
             feeDispatcher_token +
             feeInfluencer_token;
+
         uint256 swapped_coins = _getCoinAfterSwap(total_to_swap);
 
-        uint256 feeAdmin = _getPercentage(swapped_coins, FEE_DEPOSIT_ADMIN);
-        uint256 feeMarketing = _getPercentage(
+        uint256 feeAdmin = _getPercentageSwapped(
             swapped_coins,
-            FEE_DEPOSIT_MARKETING
+            FEE_DEPOSIT_ADMIN,
+            FEE_DEPOSIT_TOTAL
         );
-        uint256 feeDispatcher = _getPercentage(
+        uint256 feeMarketing = _getPercentageSwapped(
             swapped_coins,
-            FEE_DEPOSIT_DISPATCHER
+            FEE_DEPOSIT_MARKETING,
+            FEE_DEPOSIT_TOTAL
         );
-        uint256 feeInfluencer = _getPercentage(
+        uint256 feeDispatcher = _getPercentageSwapped(
             swapped_coins,
-            FEE_DEPOSIT_INFLUENCER
+            FEE_DEPOSIT_DISPATCHER,
+            FEE_DEPOSIT_TOTAL
+        );
+        uint256 feeInfluencer = _getPercentageSwapped(
+            swapped_coins,
+            FEE_DEPOSIT_INFLUENCER,
+            FEE_DEPOSIT_TOTAL
         );
 
         payable(admin).transfer(feeAdmin);
@@ -180,7 +198,12 @@ contract BitstasioTokenFarm {
         payable(influencer).transfer(feeInfluencer);
         payable(marketing).transfer(feeMarketing);
 
-        return value - feeAdmin_token - feeMarketing_token - feeInfluencer_token - feeDispatcher_token;
+        return
+            value -
+            feeAdmin_token -
+            feeMarketing_token -
+            feeInfluencer_token -
+            feeDispatcher_token;
     }
 
     function _getFeeDepositSimple(uint256 value)
@@ -215,20 +238,28 @@ contract BitstasioTokenFarm {
             feeMarketing_token +
             feeDispatcher_token +
             feeInfluencer_token;
+
         uint256 swapped_coins = _getCoinAfterSwap(total_to_swap);
 
-        uint256 feeAdmin = _getPercentage(swapped_coins, FEE_WITHDRAW_ADMIN);
-        uint256 feeMarketing = _getPercentage(
+        uint256 feeAdmin = _getPercentageSwapped(
             swapped_coins,
-            FEE_WITHDRAW_MARKETING
+            FEE_WITHDRAW_ADMIN,
+            FEE_WITHDRAW_TOTAL
         );
-        uint256 feeDispatcher = _getPercentage(
+        uint256 feeMarketing = _getPercentageSwapped(
             swapped_coins,
-            FEE_WITHDRAW_DISPATCHER
+            FEE_WITHDRAW_MARKETING,
+            FEE_WITHDRAW_TOTAL
         );
-        uint256 feeInfluencer = _getPercentage(
+        uint256 feeDispatcher = _getPercentageSwapped(
             swapped_coins,
-            FEE_WITHDRAW_INFLUENCER
+            FEE_WITHDRAW_DISPATCHER,
+            FEE_WITHDRAW_TOTAL
+        );
+        uint256 feeInfluencer = _getPercentageSwapped(
+            swapped_coins,
+            FEE_WITHDRAW_INFLUENCER,
+            FEE_WITHDRAW_TOTAL
         );
 
         payable(admin).transfer(feeAdmin);
@@ -236,7 +267,12 @@ contract BitstasioTokenFarm {
         payable(influencer).transfer(feeInfluencer);
         payable(marketing).transfer(feeMarketing);
 
-        return value - feeAdmin_token - feeMarketing_token - feeInfluencer_token - feeDispatcher_token;
+        return
+            value -
+            feeAdmin_token -
+            feeMarketing_token -
+            feeInfluencer_token -
+            feeDispatcher_token;
     }
 
     function _getFeeWithdrawSimple(uint256 value)
@@ -267,6 +303,14 @@ contract BitstasioTokenFarm {
         );
 
         return SafeMath.mul(secondsPassed, shares[adr]);
+    }
+
+    function getPercentageSwapped(
+        uint256 value,
+        uint256 percent,
+        uint256 total
+    ) external pure returns (uint256) {
+        return _getPercentageSwapped(value, percent, total);
     }
 
     function getBitToShare() external pure returns (uint256) {
