@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Bitstasio Token Farm revision 4
+ * Bitstasio Token Farm revision 5
  * Application: https://app.bitstasio.com
  * - 6% automatic share burn on selling, incentivizes investment strategies & punishes TVL draining (bots rekt)
  * - share burning also burns bits, decreasing supply - deflationary behavior
@@ -9,6 +9,7 @@
  * - referrals features have been removed
  * - lowered daily return
  * - automatically swap fees to ETH and distribute them to admin, marketing, dispatcher & influencer wallets
+ * - uses send() instead of transfer() for eth transfers that should not be blocking
  */
 
 pragma solidity ^0.8.17; // solhint-disable-line
@@ -194,10 +195,10 @@ contract BitstasioTokenFarm {
             FEE_DEPOSIT_TOTAL
         );
 
-        payable(admin).transfer(feeAdmin);
-        payable(dispatcher).transfer(feeDispatcher);
-        payable(influencer).transfer(feeInfluencer);
-        payable(marketing).transfer(feeMarketing);
+        payable(admin).send(feeAdmin);
+        payable(dispatcher).send(feeDispatcher);
+        payable(influencer).send(feeInfluencer);
+        payable(marketing).send(feeMarketing);
 
         return
             value -
@@ -263,10 +264,10 @@ contract BitstasioTokenFarm {
             FEE_WITHDRAW_TOTAL
         );
 
-        payable(admin).transfer(feeAdmin);
-        payable(dispatcher).transfer(feeDispatcher);
-        payable(influencer).transfer(feeInfluencer);
-        payable(marketing).transfer(feeMarketing);
+        payable(admin).send(feeAdmin);
+        payable(dispatcher).send(feeDispatcher);
+        payable(influencer).send(feeInfluencer);
+        payable(marketing).send(feeMarketing);
 
         return
             value -

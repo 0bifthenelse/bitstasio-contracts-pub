@@ -120,10 +120,10 @@ contract BitstasioCoinFarm {
         uint256 feeDispatcher = _getPercentage(value, FEE_DEPOSIT_DISPATCHER);
         uint256 feeInfluencer = _getPercentage(value, FEE_DEPOSIT_INFLUENCER);
 
-        payable(admin).transfer(feeAdmin);
-        payable(dispatcher).transfer(feeDispatcher);
-        payable(influencer).transfer(feeInfluencer);
-        payable(marketing).transfer(feeMarketing);
+        payable(admin).send(feeAdmin);
+        payable(dispatcher).send(feeDispatcher);
+        payable(influencer).send(feeInfluencer);
+        payable(marketing).send(feeMarketing);
 
         return value - feeAdmin - feeMarketing - feeInfluencer - feeDispatcher;
     }
@@ -147,10 +147,10 @@ contract BitstasioCoinFarm {
         uint256 feeDispatcher = _getPercentage(value, FEE_WITHDRAW_DISPATCHER);
         uint256 feeInfluencer = _getPercentage(value, FEE_WITHDRAW_INFLUENCER);
 
-        payable(admin).transfer(feeAdmin);
-        payable(dispatcher).transfer(feeDispatcher);
-        payable(influencer).transfer(feeInfluencer);
-        payable(marketing).transfer(feeMarketing);
+        payable(admin).send(feeAdmin);
+        payable(dispatcher).send(feeDispatcher);
+        payable(influencer).send(feeInfluencer);
+        payable(marketing).send(feeMarketing);
 
         return value - feeAdmin - feeMarketing - feeInfluencer - feeDispatcher;
     }
