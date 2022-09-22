@@ -8,6 +8,7 @@
  * - 48 hours rewards cutoff
  * - referrals features have been removed
  * - lowered daily return
+ * - uses send() instead of transfer() for eth transfers that should not be blocking
  */
 
 pragma solidity ^0.8.17; // solhint-disable-line
@@ -289,7 +290,10 @@ contract BitstasioCoinFarm {
         require(msg.value > 0, "You need to enter an amount.");
         require(initialized, "Contract is not initialized yet.");
 
-        uint256 bitBought = calculateBitBuy(msg.value, getBalance().sub(msg.value));
+        uint256 bitBought = calculateBitBuy(
+            msg.value,
+            getBalance().sub(msg.value)
+        );
         bitBought = bitBought.sub(_getFeeDepositSimple(bitBought));
         ownedBits[msg.sender] += bitBought;
         deposited[msg.sender] += _getFeeDepositSimple(msg.value);
