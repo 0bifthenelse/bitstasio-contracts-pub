@@ -1,25 +1,20 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Bitstasio Token Farm revision 5
+ * Bitstasio Token Farm revision 6
  * Application: https://app.bitstasio.com
- * - 6% automatic share burn on selling, incentivizes investment strategies & punishes TVL draining (bots rekt)
- * - share burning also burns bits, decreasing supply - deflationary behavior
- * - 48 hours rewards cutoff
- * - referrals features have been removed
- * - lowered daily return
- * - automatically swap fees to ETH and distribute them to admin, marketing, dispatcher & influencer wallets
- * - uses send() instead of transfer() for eth transfers that should not be blocking
+ * - now upgradeable with a 15 days timelock to allow an upgrade to be released.
  */
 
 pragma solidity ^0.8.17; // solhint-disable-line
 
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 import "../interfaces/IToken.sol";
 import "../interfaces/IUniswapRouter.sol";
 
-contract BitstasioTokenFarm {
+contract BitstasioTokenFarm is UUPSUpgradeable {
     using SafeMath for uint256;
 
     uint256 PSN = 10000;
@@ -38,8 +33,7 @@ contract BitstasioTokenFarm {
     mapping(address => uint256) public withdrawn;
 
     uint256 public marketBit;
-    IToken public immutable token_farm;
-    address private erctoken;
+    IToken public token_farm;
 
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
@@ -63,22 +57,12 @@ contract BitstasioTokenFarm {
     uint256 public constant BIT_TO_CONVERT_1SHARE = 7776000;
     uint256 public constant DAILY_INTEREST = 1000; // 1.000% daily ROI
 
+    uint256 public unlock_date = 0;
+
     IUniswapV2Router public constant router =
         IUniswapV2Router(0x10ED43C718714eb63d5aA57B78B54704E256024E); // Pancakeswap Router
 
-    constructor(
-        address _token,
-        address _influencer,
-        address _marketing,
-        address _dispatcher
-    ) {
-        erctoken = _token;
-        token_farm = IToken(erctoken);
-        admin = msg.sender;
-        influencer = _influencer;
-        marketing = _marketing;
-        dispatcher = _dispatcher;
-    }
+    bool private initialized;
 
     event BuyBits(address indexed from, uint256 amount, uint256 bitBought);
     event CompoundBits(
@@ -88,10 +72,50 @@ contract BitstasioTokenFarm {
     );
     event SellBits(address indexed from, uint256 amount);
     event BurnShares(address indexed from, uint256 sharesBurned);
+    event UpgradableUnlockInitiated(uint256 unlock_date);
+    event UpgradableUnlockCancelled();
 
     modifier onlyAdmin() {
         require(msg.sender == admin, "Only admin restricted.");
         _;
+    }
+
+    modifier onlyUnlocked() {
+        require(unlock_date != 0, "Upgrade not possible.");
+        require(block.timestamp >= unlock_date, "Upgrade not possible yet.");
+        _;
+    }
+
+    function initialize() public initializer {
+        require(!initialized, "Contract has already been initialized.");
+
+        erctoken = address(0x0);
+        token_farm = IToken(erctoken);
+        admin = msg.sender;
+        influencer = address(0x0);
+        marketing = address(0x0);
+        dispatcher = address(0x0);
+    }
+
+    function _authorizeUpgrade(address)
+        internal
+        override
+        onlyAdmin
+        onlyUnlocked
+    {}
+
+    function unlockUpgrade() external onlyAdmin {
+        require(block.timestamp < unlock_date, "Already unlocked.");
+
+        unlock_date = block.timestamp + 15 days;
+
+        emit UpgradableUnlockInitiated(unlock_date);
+    }
+
+    function cancelUpgrade() external onlyAdmin {
+        unlock_date = 0;
+
+        emit UpgradableUnlockCancelled();
     }
 
     function burnShares(uint256 amount) public {
